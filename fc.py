@@ -122,7 +122,7 @@ def fc(
     kg: Optional[Dict] = None,
     verify_sources: bool = True,
     confidence_threshold: float = 0.7,
-    llm=None,
+    llm=Chat(model=MODEL_NAME),
 ) -> Dict[str, Dict[str, Union[str, float, bool]]]:
     """
     Function to perform fact checking on a given text using a knowledge graph.
@@ -142,12 +142,6 @@ def fc(
 
     print("\n--- Starting Fact Checking Process ---")
     print(f"Input text: {text}")
-
-    if llm is None:
-        llm = Chat(model=MODEL_NAME)
-        print(f"Using default language model: {MODEL_NAME}")
-    else:
-        print("Using provided language model")
 
     print("\nStep 1: Extracting claimed facts")
     claimed_facts = extracted_claimed_facts(text, llm)

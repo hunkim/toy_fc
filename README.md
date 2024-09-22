@@ -1,27 +1,19 @@
-# Streamlit App Setup
+# Fact Checker (FC)
 
-This guide will help you set up and run the Streamlit app.
+Fact Checker (FC) is a Python-based tool designed to process text and extract individual claims for further analysis or verification.
 
-## Configuration
+Try: https://toy-fc.streamlit.app/
 
-Before running the app, you need to configure some settings. Follow these steps:
+## Features
 
-1. Create a file named `.streamlit/secrets.toml` in your project directory if it doesn't already exist.
+- Split text into individual claims
+- Utilizes advanced language models for accurate claim extraction
+- Easy-to-use Python interface
 
-2. Add the following content to the `.streamlit/secrets.toml` file:
+## Run
 
-   ```toml
-   UPSTAGE_API_KEY = "up_xxxxx"
-   MODEL_NAME = "solar-pro"
-   ```
-
-   Replace `"up_xxxxx"` with your actual Upstage API key.
-
-## Running the App
-
-Once you've completed the configuration, you can run the app using the following command:
+Created .env 
 
 ```bash
 make app
-```# solar_monitor
-# toy_fc
+```

@@ -9,3 +9,4 @@ pandas
 matplotlib
 networkx 
 pyvis
+watchdog

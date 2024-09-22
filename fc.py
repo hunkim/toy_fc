@@ -1,6 +1,7 @@
 from typing import List, Dict, Optional, Any, Union
 import json
-from langchain_groq import ChatGroq as Chat
+#from langchain_groq import ChatGroq as Chat
+from langchain_upstage import ChatUpstage as Chat
 from langchain_community.tools import DuckDuckGoSearchResults
 
 from langchain_core.output_parsers import StrOutputParser
@@ -11,11 +12,14 @@ from langchain_core.prompts import (
 )
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+import json
+from typing import Optional, Dict, Union, List, Any
+
 
 MAX_SEAERCH_RESULTS = 5
 
 MODEL_NAME = "llama-3.1-70b-versatile"
-llm = Chat(model=MODEL_NAME)
+MODEL_NAME = "solar-pro"
 ddg_search = DuckDuckGoSearchResults()
 
 
@@ -111,10 +115,6 @@ Provide the verification result:""",
 # Example usage in fc function:
 # verified_facts = verify_facts(claimed_facts, context, kg, confidence_threshold, llm)
 
-import json
-from typing import Optional, Dict, Union, List, Any
-from langchain_groq import ChatGroq as Chat
-
 
 def fc(
     text: str,
@@ -186,7 +186,7 @@ def fc(
 
 
 def extracted_claimed_facts(
-    text: str, llm: Optional[Chat] = None
+    text: str, llm: Optional[Chat] = Chat(model=MODEL_NAME)
 ) -> List[Dict[str, Any]]:
     """
     Extract claimed facts from the given text, including entities and their relationships.
@@ -198,8 +198,6 @@ def extracted_claimed_facts(
     Returns:
         List[Dict[str, Any]]: A list of extracted facts, where each fact is represented as a dictionary.
     """
-    if llm is None:
-        llm = Chat(model=MODEL_NAME)
 
     # Create the prompt template
     prompt = ChatPromptTemplate.from_messages(
@@ -294,7 +292,7 @@ def search_context(
     text: str,
     claimed_facts: List[Dict[str, Any]],
     search_tool: Any,
-    llm: Optional[Chat] = None,
+    llm: Optional[Chat] = Chat(model=MODEL_NAME),
 ) -> str:
     """
     Search for relevant information using claimed facts.
@@ -308,8 +306,6 @@ def search_context(
     Returns:
         str: The relevant context information found from the search.
     """
-    if llm is None:
-        llm = Chat(model=MODEL_NAME)
 
     # Step 1: Generate search keywords
     prompt = ChatPromptTemplate.from_messages(
@@ -390,7 +386,7 @@ def test_search_context():
 
 
 def build_kg(
-    claimed_facts: List[Dict[str, Any]], context: str, llm: Optional[Chat] = None
+    claimed_facts: List[Dict[str, Any]], context: str, llm: Optional[Chat] = Chat(model=MODEL_NAME)
 ) -> Dict[str, Any]:
     """
     Build a knowledge graph from claimed facts and context information.
@@ -403,8 +399,6 @@ def build_kg(
     Returns:
         Dict[str, Any]: The constructed knowledge graph with source information.
     """
-    if llm is None:
-        llm = Chat(model=MODEL_NAME)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -569,10 +563,7 @@ def test_verify_facts():
     print("All checks passed!")
 
 
-def add_fact_check_to_text(text, verified_facts, llm=None):
-    if llm is None:
-        llm = Chat(model=MODEL_NAME)
-
+def add_fact_check_to_text(text, verified_facts, llm=Chat(model=MODEL_NAME)):
     # First, let's create a mapping of claimed facts to their verifications
     fact_map = {fact['claimed']: fact for fact in verified_facts.values()}
     

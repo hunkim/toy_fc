@@ -10,3 +10,4 @@ matplotlib
 networkx 
 pyvis
 watchdog
+tenacity

@@ -19,6 +19,9 @@ app: $(VENV)/bin/activate
 fc: $(VENV)/bin/activate
 	$(PYTHON) fc.py
 
+test: $(VENV)/bin/activate
+	$(PYTHON) -m unittest test.py
+
 clean:
 	rm -rf __pycache__
 	rm -rf $(VENV)

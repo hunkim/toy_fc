@@ -74,7 +74,9 @@ def fc_streamlitet(
         st.write(f"Retrieved context (first 100 characters): {context[:100]}...")
 
     with st.spinner("Step 3: Building knowledge graph"):
+
         kg = build_kg(claimed_facts, context, llm)
+
         st.write(f"Built knowledge graph with {len(kg)} entities")
         st.subheader("Knowledge Graph Visualization")
         visualize_kg(kg)
@@ -153,20 +155,20 @@ if st.button("Check Facts"):
 
             # Add fact-check annotations to the original text
             annotated_text = add_fact_check_to_text(text, results)
-            
+
             # Highlight the fact-check parts
             def highlight_fact(match):
                 fact = match.group(0)
-                if 'True' in fact:
-                    color = '#90EE90'  # Light green for true facts
-                elif 'False' in fact:
-                    color = '#FFB3BA'  # Light red for false facts
+                if "True" in fact:
+                    color = "#90EE90"  # Light green for true facts
+                elif "False" in fact:
+                    color = "#FFB3BA"  # Light red for false facts
                 else:
-                    color = '#FFFFE0'  # Light yellow for uncertain facts
+                    color = "#FFFFE0"  # Light yellow for uncertain facts
                 return f'<span style="background-color: {color}; padding: 2px 5px; border-radius: 3px; font-size: 0.8em;">{fact}</span>'
 
-            highlighted_text = re.sub(r'\[Fact:.*?\]', highlight_fact, annotated_text)
-            
+            highlighted_text = re.sub(r"\[Fact:.*?\]", highlight_fact, annotated_text)
+
             st.write("Annotated Text:")
             st.markdown(highlighted_text, unsafe_allow_html=True)
 

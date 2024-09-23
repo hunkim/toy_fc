@@ -37,7 +37,7 @@ def verify_facts(
     kg: Dict[str, Any],
     confidence_threshold: float,
     llm: Optional[Chat] = Chat(model=MODEL_NAME),
-) -> Dict[str, Dict[str, Union[str, float, bool]]]:
+) -> Dict[str, Dict[str, Any]]:
     """
     Verify the claimed facts against the knowledge graph and context.
 
@@ -49,19 +49,39 @@ def verify_facts(
         llm (Optional[Chat]): The language model to use for verification, if needed.
 
     Returns:
-        Dict[str, Dict[str, Union[str, float, bool]]]: Verified facts with confidence scores.
-        The structure is: {fact_id: {"claimed": str, "verified": bool, "confidence": float, "explanation": str}}
+        Dict[str, Dict[str, Any]]: Verified facts with status, confidence, and explanation.
+        The structure is: {fact_id: {"claimed": str, "status": str, "confidence": float, "explanation": str}}
     """
 
     kg_str = json.dumps(kg, indent=2)
     verified_facts = {}
 
+    valid_statuses = {"true", "false", "probably true", "probably false", "not sure"}
+
     for i, fact in enumerate(claimed_facts):
         verification_result = verify_one_fact(context, kg_str, fact, llm)
 
+        status = verification_result.get("status", "not sure").lower()
+        confidence = verification_result.get("confidence", 0.0)
+        explanation = verification_result.get("explanation", "")
+
+        # Validate status
+        if status not in valid_statuses:
+            status = "not sure"
+
+        # Validate confidence score
+        if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+            confidence = 0.0
+
+        # Apply confidence threshold
+        if confidence < confidence_threshold:
+            status = "not sure"
+
         verified_facts[str(i)] = {
             "claimed": f"{fact['entity']} {fact['relation']} {fact['value']}",
-            **verification_result,
+            "status": status,
+            "confidence": confidence,
+            "explanation": explanation,
         }
 
     return verified_facts
@@ -77,12 +97,32 @@ def verify_one_fact(context, kg_str, fact, llm):
         [
             (
                 "system",
-                "You are an expert fact-checker. Your task is to verify a claimed fact against a knowledge graph and context information. Provide a verification result, confidence score, and explanation for the fact.",
+                "You are an expert fact-checker. Your task is to verify a claimed fact against a knowledge graph and context information. Categorize the verification result into one of the following five categories: true, false, probably true, probably false, or not sure.",
             ),
             (
                 "human",
-                """Verify the following claimed fact using the provided knowledge graph and context. Determine if it's verified, assign a confidence score (0.0 to 1.0), and provide a brief explanation.
+                """Verify the following claimed fact using the provided knowledge graph and context. Categorize the verification result into one of the following:
 
+1. **true**: Supporting evidence found in context.
+2. **false**: Contradicting evidence found in context.
+3. **probably true**: No context available, but based on your knowledge and common sense, the fact is likely true.
+4. **probably false**: No contradicting evidence in context, but based on your knowledge and common sense, the fact is likely false.
+5. **not sure**: Cannot judge due to subjectivity or unknowns.
+
+Additionally, assign a confidence score between 0.0 and 1.0 that reflects the certainty of the categorization.
+
+Provide the result in a JSON object with the following structure:
+{{
+  "status": "<CATEGORY>",
+  "confidence": <CONFIDENCE_SCORE>,
+  "explanation": "<BRIEF_EXPLANATION>"
+}}
+
+Ensure that:
+1. The categorization is based on the information in the knowledge graph and context.
+2. The confidence score accurately reflects the certainty of the categorization.
+3. The explanation briefly justifies the verification decision and confidence score.
+    
 Claimed Fact: {entity} {relation} {value}
 
 Knowledge Graph:
@@ -90,18 +130,6 @@ Knowledge Graph:
 
 Context:
 {context}
-
-Provide a JSON object with the following structure:
-{{
-  "verified": bool,
-  "confidence": float,
-  "explanation": string
-}}
-
-Ensure that:
-1. The verification is based on the information in the knowledge graph and context.
-2. The confidence score reflects the certainty of the verification (1.0 for absolute certainty, lower for less certainty).
-3. The explanation briefly justifies the verification decision and confidence score.
 
 Provide the verification result:""",
             ),
@@ -177,7 +205,7 @@ def fc(
     for fact_id, result in verified_facts.items():
         print(f"  Fact {fact_id}:")
         print(f"    Claimed: {result['claimed']}")
-        print(f"    Verified: {result['verified']}")
+        print(f"    Status: {result['status']}")
         print(f"    Confidence: {result['confidence']}")
         print(
             f"    Explanation: {result['explanation'][:100]}..."

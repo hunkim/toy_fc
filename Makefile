@@ -22,6 +22,9 @@ fc: $(VENV)/bin/activate
 test: $(VENV)/bin/activate
 	$(PYTHON) -m unittest test.py
 
+u2s: $(VENV)/bin/activate
+	$(PYTHON) un2structured.py
+
 clean:
 	rm -rf __pycache__
 	rm -rf $(VENV)

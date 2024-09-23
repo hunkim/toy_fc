@@ -3,7 +3,7 @@ import pandas as pd
 import networkx as nx
 import json
 from pyvis.network import Network
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, List, Any
 from fc import (
     extracted_claimed_facts,
     search_context,
@@ -15,9 +15,23 @@ from fc import (
     ddg_search,
 )
 import re
+import io
+import tempfile
 
 st.set_page_config(page_title="Fact Checker", page_icon="🔍", layout="wide")
 
+
+# Monkey-patch the pyvis library to allow StringIO objects
+original_write_html = Network.write_html
+
+def patched_write_html(self, name, notebook=False):
+    if isinstance(name, io.StringIO):
+        html = self.generate_html()
+        name.write(html)
+    else:
+        original_write_html(self, name, notebook)
+
+Network.write_html = patched_write_html
 
 def visualize_kg(kg):
     G = nx.Graph()
@@ -43,17 +57,47 @@ def visualize_kg(kg):
     )
     net.from_nx(G)
     net.repulsion(node_distance=200, spring_length=200)
-    net.save_graph("kg_graph.html")
+    
+    # Use StringIO to capture the HTML string
+    html_io = io.StringIO()
+    net.write_html(html_io)
+    html_string = html_io.getvalue()
 
-    with open("kg_graph.html", "r", encoding="utf-8") as f:
-        html = f.read()
+    st.components.v1.html(html_string, height=500)
 
-    st.components.v1.html(html, height=500)
+
+def add_fact_check_to_text(text: str, results: Dict[str, Dict[str, Union[str, float]]]) -> str:
+    """
+    Annotates the original text with fact-checking results.
+
+    Args:
+        text (str): The original input text.
+        results (Dict[str, Dict[str, Union[str, float]]]): The verification results.
+
+    Returns:
+        str: Annotated text with fact checks.
+    """
+    for fact_id, result in results.items():
+        claimed = result["claimed"]
+        status = result["status"]
+        confidence = result["confidence"]
+        # Safeguard against '|' characters in claimed facts
+        claimed_safe = claimed.replace("|", "\\|")
+        # Escape special regex characters in claimed fact
+        escaped_claimed = re.escape(claimed_safe)
+        # Construct the annotation
+        annotation = f"[Fact: {claimed} | status: {status} | confidence: {confidence:.2f}]"
+        # Replace only the first occurrence to prevent multiple replacements
+        text = re.sub(escaped_claimed, annotation, text, count=1)
+    return text
 
 
 def fc_streamlitet(
-    text: str, verify_sources: bool = True, confidence_threshold: float = 0.7, llm=None
-) -> Dict[str, Dict[str, Union[str, float, bool]]]:
+    text: str,
+    verify_sources: bool = True,
+    confidence_threshold: float = 0.7,
+    llm: Optional[Chat] = None,
+) -> Dict[str, Dict[str, Union[str, float]]]:
     st.write("--- Starting Fact Checking Process ---")
     st.write(f"Input text: {text}")
 
@@ -92,16 +136,33 @@ def fc_streamlitet(
     # Display all verified facts
     st.subheader("Fact Checking Results")
     for fact_id, result in verified_facts.items():
-        status = "✅ True" if result["verified"] else "❌ False"
+        status = result["status"]
         confidence = result["confidence"]
-        color = "#90EE90" if result["verified"] else "#FFB3BA"
+        explanation = result["explanation"]
+
+        # Define color and icon based on status
+        if status == "true":
+            color = "#90EE90"  # Light green
+            status_display = "✅ True"
+        elif status == "false":
+            color = "#FFB3BA"  # Light red
+            status_display = "❌ False"
+        elif status == "probably true":
+            color = "#ADD8E6"  # Light blue
+            status_display = "ℹ️ Probably True"
+        elif status == "probably false":
+            color = "#FFD700"  # Gold
+            status_display = "⚠️ Probably False"
+        else:
+            color = "#D3D3D3"  # Light gray
+            status_display = "❓ Not Sure"
 
         with st.expander(f"Fact {fact_id}: {result['claimed'][:50]}...", expanded=True):
             st.markdown(
                 f"<p style='background-color: {color}; padding: 10px;'>"
-                f"<strong>Status:</strong> {status} (Confidence: {confidence:.2f})<br>"
+                f"<strong>Status:</strong> {status_display} (Confidence: {confidence:.2f})<br>"
                 f"<strong>Claimed:</strong> {result['claimed']}<br>"
-                f"<strong>Explanation:</strong> {result['explanation']}"
+                f"<strong>Explanation:</strong> {explanation}"
                 "</p>",
                 unsafe_allow_html=True,
             )
@@ -132,41 +193,61 @@ if st.button("Check Facts"):
             st.subheader("Fact-Checking Results Summary")
 
             # Create a DataFrame for the results
-            df = pd.DataFrame(results).T
-            df["confidence"] = df["confidence"].apply(lambda x: f"{x:.2f}")
-            df["verified"] = df["verified"].apply(
-                lambda x: "✅ True" if x else "❌ False"
-            )
+            df = pd.DataFrame.from_dict(results, orient="index")
+            df.reset_index(inplace=True)
+            df = df.rename(columns={
+                "index": "Fact ID",
+                "claimed": "Claimed",
+                "status": "Status",
+                "confidence": "Confidence",
+                "explanation": "Explanation"
+            })
+
+            # Define color mapping for statuses
+            color_mapping = {
+                "true": "#90EE90",
+                "false": "#FFB3BA",
+                "probably true": "#ADD8E6",
+                "probably false": "#FFD700",
+                "not sure": "#D3D3D3"
+            }
+
+            # Apply color based on status
+            def color_status(status):
+                return f'background-color: {color_mapping.get(status.lower(), "#D3D3D3")}'
+
+            # Corrected styling: applymap receives the cell value, not the Series
+            styled_df = df.style.applymap(
+                color_status,
+                subset=["Status"]
+            ).format({
+                "Confidence": "{:.2f}"
+            })
 
             # Display the DataFrame
-            st.dataframe(
-                df.style.apply(
-                    lambda x: [
-                        (
-                            "background-color: #90EE90"
-                            if v == "✅ True"
-                            else "background-color: #FFB3BA"
-                        )
-                        for v in x
-                    ],
-                    subset=["verified"],
-                )
-            )
+            st.dataframe(styled_df)
 
             # Add fact-check annotations to the original text
             annotated_text = add_fact_check_to_text(text, results)
 
+            # Debugging Step: Display the raw annotated text to verify format
+            st.write("Annotated Text (Raw):")
+            st.text(annotated_text)
+
             # Highlight the fact-check parts
             def highlight_fact(match):
                 fact = match.group(0)
-                if "True" in fact:
-                    color = "#90EE90"  # Light green for true facts
-                elif "False" in fact:
-                    color = "#FFB3BA"  # Light red for false facts
+                # Extract status using regex: look for 'status: <STATUS>'
+                status_search = re.search(r'status:\s*([a-zA-Z\s]+)', fact, re.IGNORECASE)
+                if status_search:
+                    status = status_search.group(1).strip().lower()
                 else:
-                    color = "#FFFFE0"  # Light yellow for uncertain facts
+                    status = "not sure"
+
+                color = color_mapping.get(status, "#D3D3D3")
                 return f'<span style="background-color: {color}; padding: 2px 5px; border-radius: 3px; font-size: 0.8em;">{fact}</span>'
 
+            # Adjust the regex pattern based on how `add_fact_check_to_text` formats the annotations
             highlighted_text = re.sub(r"\[Fact:.*?\]", highlight_fact, annotated_text)
 
             st.write("Annotated Text:")

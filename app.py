@@ -172,7 +172,8 @@ def fc_streamlitet(
 
 st.title("🔍 Fact Checker")
 
-default_text = """Sung Kim is CEO of Upstage.AI and Lucy Park is CPO of the company."""
+default_text = """Sung Kim is CEO of Upstage.AI and Lucy Park is CPO of the company.
+Hwalsuk Lee is a board member of Upstage.AI."""
 
 text = st.text_area("Enter the text to fact-check:", value=default_text, height=150)
 verify_sources = st.checkbox("Verify sources", value=True)

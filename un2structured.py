@@ -3,10 +3,25 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from typing import List, Dict, Any  # Add this import
 import json  # Add this import
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
 
 MODEL_NAME = "solar-pro"
 
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, before_sleep_log
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(0),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 def text2kvpairs(
     text: str, llm: Chat = Chat(model_name=MODEL_NAME)
 ) -> List[Dict[str, str]]:
@@ -85,6 +100,13 @@ Now, extract key-value pairs from the following text. Be thorough and capture al
     return result
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(0),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 def text2kg(
     text: str, kv_pairs: List[Dict[str, str]], llm: Chat = Chat(model_name=MODEL_NAME)
 ) -> Dict[str, Any]:
@@ -204,19 +226,25 @@ Key-Value Pairs: {kv_pairs}""",
 
     return result
 
-
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(0),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 def text2questions(
     text: str, llm: Chat = Chat(model_name=MODEL_NAME)
 ) -> List[Dict[str, Any]]:
     """
-    Break down complex questions or statements into smaller, focused questions.
+    Break down complex questions or statements into smaller, focused questions with search terms.
 
     Args:
         text (str): The input text containing complex questions or statements.
         llm (Chat, optional): The language model to use for extraction. Defaults to Chat(model_name=MODEL_NAME).
 
     Returns:
-        List[Dict[str, Any]]: A list of dictionaries, each containing a sub-question and related information.
+        List[Dict[str, Any]]: A list of dictionaries, each containing a sub-question and search terms.
     """
 
     prompt = ChatPromptTemplate.from_messages(
@@ -225,17 +253,15 @@ def text2questions(
                 "human",
                 "You are an advanced AI assistant specialized in breaking down complex questions or statements into smaller, more focused questions. Your task is to:"
                 "\n1. Analyze the input text and identify the main topics and subtopics."
-                "\n2. Break down the complex question or statement into multiple smaller, specific questions."
+                "\n2. Break down the complex question or statement into 2-3 smaller, specific questions."
                 "\n3. Ensure that each sub-question is clear, concise, and focused on a single aspect."
-                "\n4. Identify key search terms or keywords for each sub-question."
-                "\n5. Provide a brief explanation of why each sub-question is relevant to the original input."
-                "\n6. Maintain the original context and intent of the input text."
-                "\n7. Ensure that the set of sub-questions covers all aspects of the original input."
-                "\n8. Prioritize the sub-questions based on their importance to the overall query."
+                "\n4. Identify specific and relevant search terms or keywords for each sub-question, without using complex search operators."
+                "\n5. Maintain the original context and intent of the input text."
+                "\n6. Ensure that the set of sub-questions covers the most important aspects of the original input."
             ),
             (
                 "human",
-                """Break down the following complex question or statement into smaller, focused questions. For each sub-question, provide key search terms and a brief explanation of its relevance. Format your response as a JSON array of objects.
+                """Break down the following complex question or statement into 2-3 smaller, focused questions. For each sub-question, provide specific and relevant search terms. Format your response as a JSON array of objects.
 
 Examples:
 
@@ -243,64 +269,48 @@ Input: "What are the environmental and economic impacts of renewable energy adop
 Output: [
     {{
         "sub_question": "What are the environmental impacts of renewable energy adoption in developing countries?",
-        "search_terms": ["renewable energy", "environmental impacts", "developing countries"],
-        "explanation": "This question focuses on the specific environmental effects of adopting renewable energy in the context of developing nations.",
-        "priority": 1
+        "search_terms": [
+            "renewable energy environmental benefits developing countries",
+            "solar wind power environmental impact emerging economies",
+            "clean energy pollution reduction third world countries"
+        ]
     }},
     {{
-        "sub_question": "What are the economic impacts of renewable energy adoption in developing countries?",
-        "search_terms": ["renewable energy", "economic impacts", "developing countries"],
-        "explanation": "This question addresses the financial and economic consequences of implementing renewable energy solutions in developing economies.",
-        "priority": 2
-    }},
-    {{
-        "sub_question": "How does the environmental impact of renewable energy compare to that of fossil fuels in developing countries?",
-        "search_terms": ["renewable energy vs fossil fuels", "environmental comparison", "developing countries"],
-        "explanation": "This question compares the environmental effects of renewable energy and traditional fossil fuels specifically in developing nations.",
-        "priority": 3
-    }},
-    {{
-        "sub_question": "How does the economic impact of renewable energy compare to that of fossil fuels in developing countries?",
-        "search_terms": ["renewable energy vs fossil fuels", "economic comparison", "developing countries"],
-        "explanation": "This question compares the economic implications of adopting renewable energy versus continuing to use fossil fuels in developing economies.",
-        "priority": 4
+        "sub_question": "How do the economic impacts of renewable energy compare to fossil fuels in developing countries?",
+        "search_terms": [
+            "renewable vs fossil fuels economic impact developing countries",
+            "clean energy vs traditional power financial comparison emerging markets",
+            "solar wind vs coal oil gas cost benefit analysis developing economies"
+        ]
     }}
 ]
 
 Input: "What are the latest advancements in artificial intelligence for healthcare, particularly in diagnosis and treatment planning, and what ethical considerations should be addressed?"
 Output: [
     {{
-        "sub_question": "What are the latest advancements in AI for medical diagnosis?",
-        "search_terms": ["AI in healthcare", "medical diagnosis", "recent advancements"],
-        "explanation": "This question focuses on cutting-edge AI technologies specifically used for diagnosing medical conditions.",
-        "priority": 1
-    }},
-    {{
-        "sub_question": "How is AI being used in treatment planning in healthcare?",
-        "search_terms": ["AI in healthcare", "treatment planning", "personalized medicine"],
-        "explanation": "This question explores the application of AI in developing and optimizing treatment plans for patients.",
-        "priority": 2
+        "sub_question": "What are the latest advancements in AI for medical diagnosis and treatment planning?",
+        "search_terms": [
+            "latest AI advancements medical diagnosis treatment planning",
+            "machine learning healthcare innovations clinical decision support",
+            "artificial intelligence diagnostic accuracy improvements personalized medicine"
+        ]
     }},
     {{
         "sub_question": "What ethical considerations arise from using AI in healthcare diagnosis and treatment?",
-        "search_terms": ["AI ethics in healthcare", "patient privacy", "algorithmic bias"],
-        "explanation": "This question addresses the important ethical implications of implementing AI in sensitive healthcare applications.",
-        "priority": 3
-    }},
-    {{
-        "sub_question": "How does AI improve the accuracy of medical diagnoses compared to traditional methods?",
-        "search_terms": ["AI vs traditional diagnosis", "diagnostic accuracy", "healthcare AI performance"],
-        "explanation": "This question compares the effectiveness of AI-based diagnosis to conventional diagnostic approaches.",
-        "priority": 4
+        "search_terms": [
+            "ethical considerations AI healthcare diagnosis treatment",
+            "machine learning ethics medical decision making bias",
+            "artificial intelligence healthcare patient privacy liability"
+        ]
     }}
 ]
 
-Now, break down the following complex question or statement into smaller, focused questions:
+Now, break down the following complex question or statement into 2-3 smaller, focused questions:
 {text}"""
             ),
             (
                 "human",
-                "Respond with a JSON array of objects representing the sub-questions, without any additional text or explanations. Ensure that each object contains 'sub_question', 'search_terms', 'explanation', and 'priority' fields. The set of sub-questions should comprehensively cover all aspects of the original input while maintaining its context and intent."
+                "Respond with a JSON array of objects, without any additional text or explanations. Each object should contain 'sub_question' and 'search_terms' fields. Ensure that the search terms are specific, relevant, and easy to use without complex operators. The set of sub-questions should cover the most important aspects of the original input while maintaining its context and intent."
             ),
         ]
     )
@@ -312,12 +322,12 @@ Now, break down the following complex question or statement into smaller, focuse
     return result
 
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     complex_question = "What's the trend in AI and what are the best AI companies following the trend?"
-    sub_questions = text2questions(complex_question)
+    result = text2questions(complex_question)
     print("Sub-questions:")
-    print(json.dumps(sub_questions, indent=4))  # Pretty-print the sub-questions
+    print(json.dumps(result, indent=4))  # Pretty-print the result
 
     text = """
     Solar-Proofread achieved 79% accuracy for a major international media company with a daily circulation of over 1.8 million, surpassing both base and fine-tuned GPT-4o mini.

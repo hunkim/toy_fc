@@ -1,6 +1,7 @@
 from langchain_upstage import ChatUpstage as Chat
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 from typing import List, Dict, Any  # Add this import
 import json  # Add this import
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
@@ -321,12 +322,100 @@ Now, break down the following complex question or statement into 2-3 smaller, fo
 
     return result
 
+def generate_prf_docs(query: str, llm: Chat, num_docs: int = 3) -> List[str]:
+    """
+    Generate pseudo-relevant feedback documents using the LLM.
+    """
+    prf_prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are an AI assistant that generates concise, relevant passages in response to a query."),
+        ("human", "Generate {num_docs} short, informative passages (2-3 sentences each) that could be relevant to the following query: {query}")
+    ])
+    
+    chain = prf_prompt | llm | StrOutputParser()
+    result = chain.invoke({"query": query, "num_docs": num_docs})
+    return result.split("\n\n")  # Assuming each passage is separated by a blank line
 
+
+# Based on https://arxiv.org/pdf/2305.03653
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+def text2questions_v2(
+    text: str, 
+    llm: Chat = Chat(model_name=MODEL_NAME)
+) -> Dict[str, Any]:
+    """
+    Generate query expansions using Chain-of-Thought prompting with an LLM and generated PRF documents.
+
+    Args:
+        text (str): The original query text.
+        llm (Chat): The language model to use. Defaults to Chat(model_name=MODEL_NAME).
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the original query, expanded query, and analysis.
+    """
+    # Generate PRF documents
+    prf_docs = generate_prf_docs(text, llm)
+
+    cot_prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are an AI assistant specialized in expanding search queries to improve retrieval effectiveness."),
+        ("human", """Given the following query and pseudo-relevant documents, please:
+1. Analyze the main topics and subtopics of the query.
+2. Break down your thought process step-by-step, considering the information in the pseudo-relevant documents.
+3. Generate 5-10 relevant expansion terms that could help in retrieving relevant documents.
+4. Provide a brief rationale for each expansion term.
+
+Original Query: {query}
+
+Pseudo-relevant documents:
+{prf_docs}
+
+Respond in the following JSON format:
+{{
+  "analysis": "Your step-by-step analysis of the query and documents",
+  "expansion_terms": [
+    {{
+      "term": "expansion term 1",
+      "rationale": "Brief explanation for this term"
+    }},
+    ...
+  ]
+}}""")
+    ])
+
+    try:
+        chain = cot_prompt | llm | JsonOutputParser()
+        result = chain.invoke({"query": text, "prf_docs": "\n".join(prf_docs)})
+        
+        original_query = text.strip()
+        expanded_queries = [original_query] * 5  # Repeat original query 5 times for emphasis
+
+        expansion_terms = [item["term"] for item in result["expansion_terms"]]
+        expanded_query = " ".join(expanded_queries + expansion_terms)
+
+        return {
+            "original_query": original_query,
+            "analysis": result["analysis"],
+            "expansion_terms": result["expansion_terms"],
+            "expanded_query": expanded_query,
+            "prf_docs": prf_docs
+        }
+    except Exception as e:
+        logger.error(f"Error in text2questions_v2: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     complex_question = "What's the trend in AI and what are the best AI companies following the trend?"
     result = text2questions(complex_question)
     print("Sub-questions:")
+    print(json.dumps(result, indent=4))  # Pretty-print the result
+
+    result = text2questions_v2(complex_question)
+    print("Sub-questions2:")
     print(json.dumps(result, indent=4))  # Pretty-print the result
 
     text = """
